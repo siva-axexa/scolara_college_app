@@ -39,10 +39,10 @@ export default async function AdminPage({
         <div className="mb-4 flex items-center justify-between gap-3">
           <h1 className="text-xl md:text-2xl font-semibold text-balance">Admin Panel</h1>
           <div className="flex items-center gap-2">
-            <div className="relative">
+            {/* <div className="relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input className="pl-8 w-[200px] md:w-[280px]" placeholder="Search admin data..." />
-            </div>
+            </div> */}
             <Link href="/" className="text-sm underline underline-offset-4">
               Back to dashboard
             </Link>

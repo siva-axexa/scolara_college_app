@@ -34,11 +34,11 @@ export async function GET(req: Request) {
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
-    // ✅ Correct or() filter (single line, no newlines)
     if (search && search.trim() !== "") {
       const keyword = `%${search}%`;
       query = query.or(
-        `users.first_name.ilike.${keyword},users.last_name.ilike.${keyword},users.email.ilike.${keyword},users.mobile.ilike.${keyword}`
+        `first_name.ilike.${keyword},last_name.ilike.${keyword},email.ilike.${keyword},mobile.ilike.${keyword}`,
+        { foreignTable: "users" } // 👈 This is the key fix
       );
     }
 
@@ -65,17 +65,21 @@ export async function GET(req: Request) {
     };
 
     const formatted = await Promise.all(
-      (data || []).map(async (r) => ({
-        id: r.id,
-        name: `${r.users?.first_name || ""} ${r.users?.last_name || ""}`.trim(),
-        phone: r.users?.mobile || "",
-        email: r.users?.email || "",
-        sslcUrl: await generateSignedUrl(r.sslc_path),
-        hscUrl: await generateSignedUrl(r.hsc_path),
-        paid: r.paid,
-        amount: r.amount,
-        createdAt: r.created_at,
-      }))
+      (data || []).map(async (r) => {
+        const user = Array.isArray(r.users) ? r.users[0] : r.users;
+
+        return {
+          id: r.id,
+          name: `${user?.first_name || ""} ${user?.last_name || ""}`.trim(),
+          phone: user?.mobile || "",
+          email: user?.email || "",
+          sslcUrl: await generateSignedUrl(r.sslc_path),
+          hscUrl: await generateSignedUrl(r.hsc_path),
+          paid: r.paid,
+          amount: r.amount,
+          createdAt: r.created_at,
+        };
+      })
     );
 
     const total = count || 0;
