@@ -1,108 +1,112 @@
-"use client"
+"use client";
 
-import { useMemo, useState, useEffect } from "react"
-import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { UploadCloud, Download } from "lucide-react"
+import { useEffect, useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Download } from "lucide-react";
 
 type Application = {
-  id: string
-  name: string
-  phone: string
-  mark10: number
-  mark12: number
-  pdf10Url?: string
-  pdf12Url?: string
-  stream: "engineering" | "arts" | "medical" | "law"
-}
+  id: number;
+  name: string;
+  phone: string;
+  email: string;
+  sslcUrl?: string | null;
+  hscUrl?: string | null;
+  amount?: number;
+  paid: boolean;
+  createdAt: string;
+  status?: "pending" | "approved" | "rejected";
+};
 
-const MOCK_APPS: Application[] = [
-  {
-    id: "a1",
-    name: "Karan Verma",
-    phone: "+91 90123 45678",
-    mark10: 92,
-    mark12: 88,
-    pdf10Url: "#",
-    pdf12Url: "#",
-    stream: "engineering",
-  },
-  {
-    id: "a2",
-    name: "Sara Ali",
-    phone: "+91 99876 54321",
-    mark10: 89,
-    mark12: 91,
-    pdf10Url: "#",
-    pdf12Url: "#",
-    stream: "medical",
-  },
-  { id: "a3", name: "Liam Jones", phone: "+1 415-555-0198", mark10: 85, mark12: 84, stream: "arts" },
-]
+type Pagination = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+};
 
-type ApprovedItem = {
-  id: string
-  name: string
-  phone: string
-  stream: Application["stream"]
-  amount?: number
-  paymentEnabled?: boolean
-}
+const LS_KEY = "approved_pending_status";
 
-const LS_KEY = "approved_items"
-
-function getApprovedFromLS(): ApprovedItem[] {
+function getStatusFromLocalStorage(): Record<number, Application["status"]> {
   try {
-    const raw = localStorage.getItem(LS_KEY)
-    return raw ? (JSON.parse(raw) as ApprovedItem[]) : []
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : {};
   } catch {
-    return []
+    return {};
   }
 }
 
-function setApprovedToLS(items: ApprovedItem[]) {
+function saveStatusToLocalStorage(statuses: Record<number, Application["status"]>) {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(items))
+    localStorage.setItem(LS_KEY, JSON.stringify(statuses));
   } catch {
     // ignore
   }
 }
 
 export default function ApplicationsTable() {
-  const [apps, setApps] = useState<Application[]>(MOCK_APPS)
-  const [q, setQ] = useState("")
+  const [apps, setApps] = useState<Application[]>([]);
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+    hasNext: false,
+    hasPrev: false,
+  });
 
-  const [hydrated, setHydrated] = useState(false)
-  useEffect(() => setHydrated(true), [])
+  const [statuses, setStatuses] = useState<Record<number, Application["status"]>>({});
 
-  const rows = useMemo(() => {
-    const v = q.toLowerCase().trim()
-    const source = apps
-    if (!v) return source
-    return source.filter(
-      (r) =>
-        r.name.toLowerCase().includes(v) || r.phone.toLowerCase().includes(v) || r.stream.toLowerCase().includes(v),
-    )
-  }, [q, apps])
+  // ✅ Load saved approval states from localStorage
+  useEffect(() => {
+    const stored = getStatusFromLocalStorage();
+    setStatuses(stored);
+  }, []);
 
-  const approve = (r: Application) => {
-    const newApproved: ApprovedItem = {
-      id: r.id,
-      name: r.name,
-      phone: r.phone,
-      stream: r.stream,
-      amount: 0,
-      paymentEnabled: false,
+  // ✅ Fetch applications from Supabase API
+  const fetchApplications = async (page = 1, search = "") => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/admin/applications?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(search)}`
+      );
+      const json = await res.json();
+      if (json.success) {
+        setApps(json.data || []);
+        setPagination(json.pagination);
+      }
+    } catch (e) {
+      console.error("Error fetching applications:", e);
+    } finally {
+      setLoading(false);
     }
-    if (hydrated) {
-      const existing = getApprovedFromLS()
-      const merged = [...existing.filter((x) => x.id !== r.id), newApproved]
-      setApprovedToLS(merged)
-    }
-    setApps((prev) => prev.filter((x) => x.id !== r.id))
-  }
+  };
+
+  useEffect(() => {
+    fetchApplications(1, q);
+  }, [q]);
+
+  // ✅ Handle Approve / Reject actions
+  const updateStatus = (id: number, newStatus: Application["status"]) => {
+    setStatuses((prev) => {
+      const updated = { ...prev, [id]: newStatus };
+      saveStatusToLocalStorage(updated);
+      return updated;
+    });
+  };
 
   return (
     <Card className="p-4">
@@ -111,95 +115,134 @@ export default function ApplicationsTable() {
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search name, phone, stream"
+          placeholder="Search name, email, or phone"
           className="w-[260px]"
         />
       </div>
+
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Phone</TableHead>
-              <TableHead>10th Mark</TableHead>
-              <TableHead>12th Mark</TableHead>
-              <TableHead>10th Mark PDF</TableHead>
-              <TableHead>12th Mark PDF</TableHead>
-              <TableHead>Stream</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>10th Marksheet</TableHead>
+              <TableHead>12th Marksheet</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell>{r.name}</TableCell>
-                <TableCell>{r.phone}</TableCell>
-                <TableCell>{r.mark10}</TableCell>
-                <TableCell>{r.mark12}</TableCell>
-                <TableCell>
-                  {r.pdf10Url ? (
-                    <div className="flex items-center gap-2">
-                      <a className="text-primary underline" href={r.pdf10Url} target="_blank" rel="noreferrer">
-                        View
-                      </a>
-                      <a
-                        href={r.pdf10Url}
-                        download
-                        aria-label={`Download 10th Mark PDF for ${r.name}`}
-                        className="inline-flex items-center text-muted-foreground hover:text-foreground"
-                        title="Download"
-                      >
-                        <Download className="h-4 w-4" />
-                      </a>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">None</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {r.pdf12Url ? (
-                    <div className="flex items-center gap-2">
-                      <a className="text-primary underline" href={r.pdf12Url} target="_blank" rel="noreferrer">
-                        View
-                      </a>
-                      <a
-                        href={r.pdf12Url}
-                        download
-                        aria-label={`Download 12th Mark PDF for ${r.name}`}
-                        className="inline-flex items-center text-muted-foreground hover:text-foreground"
-                        title="Download"
-                      >
-                        <Download className="h-4 w-4" />
-                      </a>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">None</span>
-                  )}
-                </TableCell>
-                <TableCell className="capitalize">{r.stream}</TableCell>
-                <TableCell className="text-right">
-                  <Button variant="secondary" size="sm" className="mr-2" onClick={() => approve(r)}>
-                    Approve
-                  </Button>
-                  <Button variant="destructive" size="sm">
-                    Reject
-                  </Button>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-4">
+                  Loading...
                 </TableCell>
               </TableRow>
-            ))}
+            ) : apps.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-4">
+                  No applications found
+                </TableCell>
+              </TableRow>
+            ) : (
+              apps.map((r) => {
+                const status = statuses[r.id] || "pending";
+                return (
+                  <TableRow key={r.id}>
+                    <TableCell>{r.name}</TableCell>
+                    <TableCell>{r.phone}</TableCell>
+                    <TableCell>{r.email}</TableCell>
+                    <TableCell>
+                      {r.sslcUrl ? (
+                        <a
+                          href={r.sslcUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 text-primary underline"
+                        >
+                          View <Download className="h-4 w-4" />
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">Nill</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {r.hscUrl ? (
+                        <a
+                          href={r.hscUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 text-primary underline"
+                        >
+                          View <Download className="h-4 w-4" />
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">Nill</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="capitalize">
+                      {status === "approved" && (
+                        <span className="text-green-600 font-medium">Approved</span>
+                      )}
+                      {status === "rejected" && (
+                        <span className="text-red-600 font-medium">Rejected</span>
+                      )}
+                      {status === "pending" && (
+                        <span className="text-yellow-600 font-medium">Pending</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="mr-2"
+                        onClick={() => updateStatus(r.id, "approved")}
+                        disabled={status === "approved"}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => updateStatus(r.id, "rejected")}
+                        disabled={status === "rejected"}
+                      >
+                        Reject
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>
 
-      <div className="mt-4 flex items-center gap-2">
-        <Button size="sm" variant="outline">
-          <UploadCloud className="mr-2 h-4 w-4" />
-          Upload PDFs
-        </Button>
-        <Button size="sm" variant="secondary">
-          Export CSV
-        </Button>
+      <div className="flex justify-between mt-4 items-center">
+        <div className="text-sm text-muted-foreground">
+          Page {pagination.page} of {pagination.totalPages}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!pagination.hasPrev || loading}
+            onClick={() => fetchApplications(pagination.page - 1, q)}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!pagination.hasNext || loading}
+            onClick={() => fetchApplications(pagination.page + 1, q)}
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </Card>
-  )
+  );
 }

@@ -1,92 +1,70 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from "@/lib/superbase/admin-client";
+import { NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
+export async function GET(req: Request) {
   try {
-    // TODO: Add admin authentication middleware here
-    
-    // Get query parameters
-    const { searchParams } = new URL(request.url);
-    const search = searchParams.get('search') || '';
-    const course = searchParams.get('course') || '';
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const { searchParams } = new URL(req.url);
+    const page = Number(searchParams.get("page")) || 1;
+    const limit = Number(searchParams.get("limit")) || 10;
+    const search = searchParams.get("search") || "";
     const offset = (page - 1) * limit;
 
-    // Build the query
-    let query = supabase
-      .from('Student')
-      .select('id, firstName, lastName, email, collegeCourse, phoneNumber, created_at', { count: 'exact' })
-      .eq('signedUp', true)
-      .not('firstName', 'is', null)
-      .not('lastName', 'is', null);
-
-    // Add course filter
-    if (course.trim() && course !== 'ALL') {
-      query = query.eq('collegeCourse', course.toUpperCase());
-    }
-
-    // Add search functionality
-    if (search.trim()) {
-      const searchTerm = search.trim().toLowerCase();
-      // Search by firstName, lastName, or email (starts with search term)
-      query = query.or(`firstName.ilike.${searchTerm}%,lastName.ilike.${searchTerm}%,email.ilike.${searchTerm}%`);
-    }
-
-    // Apply pagination and ordering
-    const { data: users, error, count } = await query
-      .order('created_at', { ascending: false })
+    // Build Supabase query
+    let query = supabaseAdmin
+      .from("users")
+      .select(
+        "id, first_name, last_name, email, mobile, is_active, created_at",
+        { count: "exact" }
+      )
+      .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
+    if (search.trim()) {
+      query = query.or(
+        `first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`
+      );
+    }
+
+    const { data, error, count } = await query;
+
     if (error) {
-      console.error('Database error:', error);
+      console.error("Supabase users fetch error:", error);
       return NextResponse.json(
-        { error: 'Failed to fetch users data' },
+        { success: false, message: error.message || "Database error" },
         { status: 500 }
       );
     }
 
-    // Format the response
-    const formattedUsers = users.map(user => ({
-      id: user.id.toString(),
-      firstName: user.firstName || '',
-      lastName: user.lastName || '',
-      email: user.email || '',
-      course: user.collegeCourse || '',
-      phoneNumber: user.phoneNumber.toString(),
-      createdAt: user.created_at
+    const formatted = (data || []).map((r) => ({
+      id: r.id,
+      firstName: r.first_name,
+      lastName: r.last_name,
+      email: r.email,
+      mobile: r.mobile,
+      isActive: r.is_active,
+      createdAt: r.created_at,
     }));
 
-    // Calculate pagination metadata
-    const totalPages = Math.ceil((count || 0) / limit);
+    const total = count || 0;
+    const totalPages = Math.ceil(total / limit);
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: formattedUsers,
-        pagination: {
-          page,
-          limit,
-          total: count || 0,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1
-        },
-        filters: {
-          search,
-          course
-        }
+    return NextResponse.json({
+      success: true,
+      message: "Users fetched successfully",
+      data: formatted,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
       },
-      { status: 200 }
-    );
-
-  } catch (error: any) {
-    console.error('API error:', error);
+    });
+  } catch (err) {
+    console.error("Route error:", err);
     return NextResponse.json(
-      {
-        error: 'Internal server error',
-        details: process.env.NODE_ENV === 'development' ? error.message : 'Please try again later',
-      },
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }
